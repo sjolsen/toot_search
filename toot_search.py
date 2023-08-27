@@ -1,17 +1,32 @@
 import argparse
 import contextlib
 import dataclasses
+import os
 import sys
-from typing import Iterator, Self
+from typing import Any, Dict, Iterator, List, Self
 
+import mastodon
 import requests
 from urllib3.util import Url
+from whoosh.fields import SchemaClass, ID, TEXT
+import whoosh.index
+from whoosh.index import Index
+import whoosh.qparser
 
 
 @dataclasses.dataclass
-class MastodonClient:
+class Status:
+    id: str
+    url: str
+    account: str
+    content: str
+    spoiler_text: str
+
+
+@dataclasses.dataclass
+class Client:
     site: Url
-    _session: requests.Session
+    api: mastodon.Mastodon
 
     @classmethod
     @contextlib.contextmanager
@@ -19,11 +34,59 @@ class MastodonClient:
         site = Url(scheme='https', host=host)
         with requests.Session() as session:
             session.verify = verify_ssl
-            yield cls(site=site, _session=session)
+            client_id, client_secret = mastodon.Mastodon.create_app(
+                client_name='toot_search',
+                scopes=['read'],
+                api_base_url=site.url,
+                session=session)
+            api = mastodon.Mastodon(
+                client_id=client_id,
+                client_secret=client_secret,
+                api_base_url=site.url,
+                session=session)
+            yield cls(site, api)
 
-    def get(self, user: str) -> requests.Response:
-        url = self.site._replace(path='/api/v1/accounts/lookup')
-        return self._session.get(url.url, params={'acct': user})
+    def get_statuses(self, user: str) -> Iterator[Status]:
+        account = self.api.account_lookup(user)
+
+        def chunks() -> Iterator[List[Dict[str, Any]]]:
+            chunk = self.api.account_statuses(account['id'])
+            yield chunk
+            while p_next := getattr(chunk, '_pagination_next', None):
+                chunk = self.api.account_statuses(
+                    account['id'],
+                    max_id=p_next['max_id'])
+                yield chunk
+
+        for chunk in chunks():
+            for raw in chunk:
+                yield Status(
+                    id=str(raw['id']),
+                    url=raw['url'],
+                    account=raw['account']['acct'],
+                    content=raw['content'],
+                    spoiler_text=raw['spoiler_text'])
+
+
+class Schema(SchemaClass):
+    id = ID(unique=True, stored=True)
+    url = ID(stored=True)
+    account = ID(stored=True)
+    content = TEXT(stored=True)
+    spoiler_text = TEXT(stored=True)
+
+
+@contextlib.contextmanager
+def open_index(path: str) -> Iterator[Index]:
+    if os.path.exists(path):
+        index = whoosh.index.open_dir(path)
+    else:
+        os.mkdir(path)
+        index = whoosh.index.create_in(path, Schema)
+    try:
+        yield index
+    finally:
+        index.close()
 
 
 def cmd_index(ns: argparse.Namespace):
@@ -32,9 +95,30 @@ def cmd_index(ns: argparse.Namespace):
     host: str = ns.host
     user: str = ns.user
 
-    with MastodonClient.open(host, verify_ssl=verify_ssl) as c:
-        for k, v in c.get(user).json().items():
-            print(f'{k}: {v}')
+    with contextlib.ExitStack() as stack:
+        index = stack.enter_context(open_index('index'))
+        writer = index.writer()
+        stack.callback(writer.commit)
+
+        client = stack.enter_context(Client.open(host, verify_ssl=verify_ssl))
+        for status in client.get_statuses(user):
+            writer.add_document(**dataclasses.asdict(status))
+
+
+def cmd_search(ns: argparse.Namespace):
+    """Search locally indexed toots."""
+    query_str: str = ns.query
+
+    with contextlib.ExitStack() as stack:
+        index = stack.enter_context(open_index('index'))
+        searcher = stack.enter_context(index.searcher())
+        parser = whoosh.qparser.QueryParser('content', Schema())
+        query = parser.parse(query_str)
+        results = searcher.search(query)
+
+        for result in results:
+            status = Status(**result)
+            print(status)
 
 
 def main() -> int:
@@ -48,6 +132,10 @@ def main() -> int:
         '--verify-ssl', action=argparse.BooleanOptionalAction, default=True)
     p_index.add_argument('host')
     p_index.add_argument('user')
+
+    p_search = subparsers.add_parser('search', help=cmd_search.__doc__)
+    p_search.set_defaults(command=cmd_search)
+    p_search.add_argument('query')
 
     ns = parser.parse_args()
     ns.command(ns)
