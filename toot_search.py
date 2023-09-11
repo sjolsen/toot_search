@@ -1,9 +1,11 @@
 import argparse
 import contextlib
 import dataclasses
+import html.parser
 import os
 import sys
-from typing import Any, Dict, Iterator, List, Self
+import textwrap
+from typing import Any, Dict, Iterator, List, Self, Tuple
 
 import mastodon
 import requests
@@ -13,6 +15,34 @@ import whoosh.index
 from whoosh.index import Index
 import whoosh.qparser
 
+DISPLAY_WIDTH: int = 70
+
+
+class BasicHTMLRenderer(html.parser.HTMLParser):
+    _parts: List[str]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._parts = []
+
+    def get_output(self) -> str:
+        result = ''.join(self._parts)
+        self._parts = [result]
+        return result
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, str]]):
+        if tag == 'p' and self.get_output():
+            self._parts.append('\n\n')
+
+    def handle_data(self, data: str):
+        self._parts.append(data)
+
+    @classmethod
+    def render(cls, src: str) -> str:
+        r = cls()
+        r.feed(src)
+        return r.get_output()
+
 
 @dataclasses.dataclass
 class Status:
@@ -21,6 +51,20 @@ class Status:
     account: str
     content: str
     spoiler_text: str
+
+
+def show_status(status: Status) -> str:
+    lines = [
+        f'Account: {status.account}',
+        f'URL: {status.url}',
+    ]
+    if status.spoiler_text:
+        text = f'Spoiler: {BasicHTMLRenderer.render(status.spoiler_text)}'
+        lines.extend(textwrap.wrap(text, width=DISPLAY_WIDTH))
+    lines.append('')
+    text = BasicHTMLRenderer.render(status.content)
+    lines.extend(textwrap.wrap(text, width=DISPLAY_WIDTH))
+    return '\n'.join(lines)
 
 
 @dataclasses.dataclass
@@ -118,7 +162,9 @@ def cmd_search(ns: argparse.Namespace):
 
         for result in results:
             status = Status(**result)
-            print(status)
+            print(DISPLAY_WIDTH * '-')
+            print(show_status(status))
+            print('')
 
 
 def main() -> int:
