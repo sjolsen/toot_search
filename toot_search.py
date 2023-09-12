@@ -1,11 +1,10 @@
 import argparse
+from collections.abc import Iterator
 import contextlib
 import dataclasses
-import html.parser
 import os
 import sys
-import textwrap
-from typing import Any, Dict, Iterator, List, Self, Tuple
+from typing import Any, Self
 
 import mastodon
 import requests
@@ -15,46 +14,9 @@ import whoosh.index
 from whoosh.index import Index
 import whoosh.qparser
 
+import render
+
 DISPLAY_WIDTH: int = 70
-
-
-class BasicHTMLRenderer(html.parser.HTMLParser):
-    _lines: List[List[str]]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lines = []
-
-    def _get_line(self, i: int) -> str:
-        result = ''.join(self._lines[i])
-        self._lines[i] = [result]
-        return result
-
-    def lines(self) -> Iterator[str]:
-        for i in range(len(self._lines)):
-            yield self._get_line(i)
-
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, str]]):
-        if tag == 'p' and self._lines:
-            self._lines.append([])
-            self._lines.append([])
-        if tag == 'br':
-            self._lines.append([])
-
-    def handle_data(self, data: str):
-        if not self._lines:
-            self._lines.append([])
-        self._lines[-1].append(data)
-
-    @classmethod
-    def render(cls, src: str) -> Iterator[str]:
-        r = cls()
-        r.feed(src)
-        for raw_line in r.lines():
-            output_lines = textwrap.wrap(raw_line, width=DISPLAY_WIDTH)
-            if not output_lines:
-                yield ''
-            yield from output_lines
 
 
 @dataclasses.dataclass
@@ -74,7 +36,8 @@ def show_status(status: Status) -> str:
     if status.spoiler_text:
         lines.append(f'Spoiler: {status.spoiler_text}')
     lines.append('')
-    lines.extend(BasicHTMLRenderer.render(status.content))
+    lines.extend(render.BasicHTML.render(status.content,
+                                         display_width=DISPLAY_WIDTH))
     return '\n'.join(lines)
 
 
@@ -104,7 +67,7 @@ class Client:
     def get_statuses(self, user: str) -> Iterator[Status]:
         account = self.api.account_lookup(user)
 
-        def chunks() -> Iterator[List[Dict[str, Any]]]:
+        def chunks() -> Iterator[list[dict[str, Any]]]:
             chunk = self.api.account_statuses(account['id'])
             yield chunk
             while p_next := getattr(chunk, '_pagination_next', None):
