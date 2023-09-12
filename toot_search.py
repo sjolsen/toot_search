@@ -19,29 +19,42 @@ DISPLAY_WIDTH: int = 70
 
 
 class BasicHTMLRenderer(html.parser.HTMLParser):
-    _parts: List[str]
+    _lines: List[List[str]]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._parts = []
+        self._lines = []
 
-    def get_output(self) -> str:
-        result = ''.join(self._parts)
-        self._parts = [result]
+    def _get_line(self, i: int) -> str:
+        result = ''.join(self._lines[i])
+        self._lines[i] = [result]
         return result
 
+    def lines(self) -> Iterator[str]:
+        for i in range(len(self._lines)):
+            yield self._get_line(i)
+
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, str]]):
-        if tag == 'p' and self.get_output():
-            self._parts.append('\n\n')
+        if tag == 'p' and self._lines:
+            self._lines.append([])
+            self._lines.append([])
+        if tag == 'br':
+            self._lines.append([])
 
     def handle_data(self, data: str):
-        self._parts.append(data)
+        if not self._lines:
+            self._lines.append([])
+        self._lines[-1].append(data)
 
     @classmethod
-    def render(cls, src: str) -> str:
+    def render(cls, src: str) -> Iterator[str]:
         r = cls()
         r.feed(src)
-        return r.get_output()
+        for raw_line in r.lines():
+            output_lines = textwrap.wrap(raw_line, width=DISPLAY_WIDTH)
+            if not output_lines:
+                yield ''
+            yield from output_lines
 
 
 @dataclasses.dataclass
@@ -59,11 +72,9 @@ def show_status(status: Status) -> str:
         f'URL: {status.url}',
     ]
     if status.spoiler_text:
-        text = f'Spoiler: {BasicHTMLRenderer.render(status.spoiler_text)}'
-        lines.extend(textwrap.wrap(text, width=DISPLAY_WIDTH))
+        lines.append(f'Spoiler: {status.spoiler_text}')
     lines.append('')
-    text = BasicHTMLRenderer.render(status.content)
-    lines.extend(textwrap.wrap(text, width=DISPLAY_WIDTH))
+    lines.extend(BasicHTMLRenderer.render(status.content))
     return '\n'.join(lines)
 
 
