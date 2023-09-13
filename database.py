@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 import dataclasses
+import datetime
 import os
 import pickle
 import sqlite3
@@ -17,6 +18,10 @@ class Status:
     @property
     def url(self) -> str:
         return self.raw['url']
+    
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self.raw['created_at']
 
     @property
     def account(self) -> str:

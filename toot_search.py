@@ -26,6 +26,7 @@ DISPLAY_WIDTH: int = 70
 def show_status(status: Status) -> str:
     lines = [
         f'Account: {status.account}',
+        f'Date: {status.created_at:%Y-%m-%d %H:%M %Z}',
         f'URL: {status.url}',
     ]
     if status.spoiler_text:
