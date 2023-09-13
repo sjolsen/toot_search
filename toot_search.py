@@ -4,7 +4,7 @@ import contextlib
 import dataclasses
 import os
 import sys
-from typing import Any, Self
+from typing import cast, Any, Optional, Self
 
 import mastodon
 import requests
@@ -15,17 +15,12 @@ from whoosh.index import Index
 import whoosh.qparser
 
 import render
+from database import Database, Status
+
+STATUS_DB = 'status.db'
+INDEX_DIR = 'index'
 
 DISPLAY_WIDTH: int = 70
-
-
-@dataclasses.dataclass
-class Status:
-    id: str
-    url: str
-    account: str
-    content: str
-    spoiler_text: str
 
 
 def show_status(status: Status) -> str:
@@ -64,34 +59,31 @@ class Client:
                 session=session)
             yield cls(site, api)
 
-    def get_statuses(self, user: str) -> Iterator[Status]:
+    def get_statuses(self, user: str,
+                     *, min_id: Optional[str] = None) -> Iterator[Status]:
         account = self.api.account_lookup(user)
 
         def chunks() -> Iterator[list[dict[str, Any]]]:
-            chunk = self.api.account_statuses(account['id'])
+            chunk = self.api.account_statuses(account['id'], min_id=min_id)
             yield chunk
             while p_next := getattr(chunk, '_pagination_next', None):
                 chunk = self.api.account_statuses(
                     account['id'],
+                    min_id=min_id,
                     max_id=p_next['max_id'])
                 yield chunk
 
         for chunk in chunks():
             for raw in chunk:
-                yield Status(
-                    id=str(raw['id']),
-                    url=raw['url'],
-                    account=raw['account']['acct'],
-                    content=raw['content'],
-                    spoiler_text=raw['spoiler_text'])
+                yield Status(raw)
 
 
 class Schema(SchemaClass):
     id = ID(unique=True, stored=True)
-    url = ID(stored=True)
-    account = ID(stored=True)
-    content = TEXT(stored=True)
-    spoiler_text = TEXT(stored=True)
+    url = ID()
+    account = ID()
+    content = TEXT()
+    spoiler_text = TEXT()
 
 
 @contextlib.contextmanager
@@ -114,13 +106,22 @@ def cmd_index(ns: argparse.Namespace):
     user: str = ns.user
 
     with contextlib.ExitStack() as stack:
-        index = stack.enter_context(open_index('index'))
+        db = Database(STATUS_DB)
+        db.create()
+        max_id = db.max_id()
+
+        client = stack.enter_context(Client.open(host, verify_ssl=verify_ssl))
+        for status in client.get_statuses(user, min_id=max_id):
+            db.insert(status)
+
+        index = stack.enter_context(open_index(INDEX_DIR))
         writer = index.writer()
         stack.callback(writer.commit)
 
-        client = stack.enter_context(Client.open(host, verify_ssl=verify_ssl))
-        for status in client.get_statuses(user):
-            writer.add_document(**dataclasses.asdict(status))
+        for _, status in db.items():
+            fields = cast(list[str], Schema().names())
+            document = {field: getattr(status, field) for field in fields}
+            writer.update_document(**document)
 
 
 def cmd_search(ns: argparse.Namespace):
@@ -128,14 +129,15 @@ def cmd_search(ns: argparse.Namespace):
     query_str: str = ns.query
 
     with contextlib.ExitStack() as stack:
-        index = stack.enter_context(open_index('index'))
+        db = Database(STATUS_DB)
+        index = stack.enter_context(open_index(INDEX_DIR))
         searcher = stack.enter_context(index.searcher())
         parser = whoosh.qparser.QueryParser('content', Schema())
         query = parser.parse(query_str)
         results = searcher.search(query)
 
         for result in results:
-            status = Status(**result)
+            status = db.get(result['id'])
             print(DISPLAY_WIDTH * '-')
             print(show_status(status))
             print('')
