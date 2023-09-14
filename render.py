@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 import dataclasses
 import html.parser
 import textwrap
@@ -61,35 +61,36 @@ class BasicHTML(html.parser.HTMLParser):
             yield ''
             yield from paragraph.lines()
 
-    def _compressed_lines(self) -> Iterator[str]:
-        i = self._raw_lines()
-        # Discard leading whitespace
-        while True:
-            match next(i, None):
-                case None:
-                    return
-                case '':
-                    continue
-                case line:
-                    yield line
-                    break
-        # Compress internal whitespace and discard trailing whitespace
-        blank_lines = 0
-        while True:
-            match next(i, None):
-                case None:
-                    return
-                case '':
-                    blank_lines += 1
-                case line:
-                    if blank_lines > 0:
-                        yield ''
-                        blank_lines = 0
-                    yield line
-
     @classmethod
     def render(cls, src: str, *, display_width: int) -> Iterator[str]:
         r = cls()
         r.feed(src)
-        for line in r._compressed_lines():
+        for line in r._raw_lines():
             yield from textwrap.wrap(line, width=display_width) or ['']
+
+
+def compress(lines: Iterable[str]) -> Iterator[str]:
+    i = iter(lines)
+    # Discard leading whitespace
+    while True:
+        match next(i, None):
+            case None:
+                return
+            case '':
+                continue
+            case line:
+                yield line
+                break
+    # Compress internal whitespace and discard trailing whitespace
+    blank_lines = 0
+    while True:
+        match next(i, None):
+            case None:
+                return
+            case '':
+                blank_lines += 1
+            case line:
+                if blank_lines > 0:
+                    yield ''
+                    blank_lines = 0
+                yield line

@@ -48,7 +48,7 @@ class Status:
     @property
     def favourites_count(self) -> int:
         return self.raw['favourites_count']
-    
+
     @property
     def media_attachments(self) -> list[dict[str, Any]]:
         return self.raw['media_attachments']
@@ -76,7 +76,7 @@ class Status:
             f'Boosts: {self.reblogs_count}',
             f'Faves: {self.favourites_count}',
         ]))
-        return '\n'.join(lines)
+        return '\n'.join(render.compress(lines))
 
 
 def print_statuses(statuses: Iterable[Status]):
