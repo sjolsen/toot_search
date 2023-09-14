@@ -134,6 +134,7 @@ CATEGORIES = {
 
 def cmd_top(ns: argparse.Namespace):
     """Search locally indexed toots."""
+    limit: int = ns.limit
     category: str = ns.category
 
     def key(status: Status) -> int:
@@ -141,7 +142,7 @@ def cmd_top(ns: argparse.Namespace):
 
     db = Database(STATUS_DB)
     statuses = sorted(db.values(), key=key)
-    status.print_statuses(statuses[-10:])
+    status.print_statuses(statuses[-limit:])
 
 
 def main() -> int:
@@ -162,6 +163,7 @@ def main() -> int:
 
     p_top = subparsers.add_parser('top', help=cmd_top.__doc__)
     p_top.set_defaults(command=cmd_top)
+    p_top.add_argument('--limit', type=int, default=10)
     p_top.add_argument('category', nargs='?',
                        choices=CATEGORIES.keys(), default='faves')
 
