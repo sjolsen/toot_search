@@ -66,3 +66,7 @@ class Database:
                 id = row['id']
                 status = Status(pickle.loads(row['pickled']))
                 yield id, status
+
+    def values(self) -> Iterator[Status]:
+        for _, v in self.items():
+            yield v

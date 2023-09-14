@@ -125,6 +125,25 @@ def cmd_search(ns: argparse.Namespace):
         status.print_statuses(db.get(result['id']) for result in results)
 
 
+CATEGORIES = {
+    'replies': 'replies_count',
+    'boosts': 'reblogs_count',
+    'faves': 'favourites_count',
+}
+
+
+def cmd_top(ns: argparse.Namespace):
+    """Search locally indexed toots."""
+    category: str = ns.category
+
+    def key(status: Status) -> int:
+        return getattr(status, CATEGORIES[category])
+
+    db = Database(STATUS_DB)
+    statuses = sorted(db.values(), key=key)
+    status.print_statuses(statuses[-10:])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog='toot_search.py')
     parser.add_argument('--database', default='toot_search.db')
@@ -140,6 +159,11 @@ def main() -> int:
     p_search = subparsers.add_parser('search', help=cmd_search.__doc__)
     p_search.set_defaults(command=cmd_search)
     p_search.add_argument('query')
+
+    p_top = subparsers.add_parser('top', help=cmd_top.__doc__)
+    p_top.set_defaults(command=cmd_top)
+    p_top.add_argument('category', nargs='?',
+                       choices=CATEGORIES.keys(), default='faves')
 
     ns = parser.parse_args()
     ns.command(ns)
