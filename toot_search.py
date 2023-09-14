@@ -14,27 +14,12 @@ import whoosh.index
 from whoosh.index import Index
 import whoosh.qparser
 
-import render
-from database import Database, Status
+from database import Database
+import status
+from status import Status
 
 STATUS_DB = 'status.db'
 INDEX_DIR = 'index'
-
-DISPLAY_WIDTH: int = 70
-
-
-def show_status(status: Status) -> str:
-    lines = [
-        f'Account: {status.account}',
-        f'Date: {status.created_at:%Y-%m-%d %H:%M %Z}',
-        f'URL: {status.url}',
-    ]
-    if status.spoiler_text:
-        lines.append(f'Spoiler: {status.spoiler_text}')
-    lines.append('')
-    lines.extend(render.BasicHTML.render(status.content,
-                                         display_width=DISPLAY_WIDTH))
-    return '\n'.join(lines)
 
 
 @dataclasses.dataclass
@@ -137,11 +122,7 @@ def cmd_search(ns: argparse.Namespace):
         query = parser.parse(query_str)
         results = searcher.search(query)
 
-        for result in results:
-            status = db.get(result['id'])
-            print(DISPLAY_WIDTH * '-')
-            print(show_status(status))
-            print('')
+        status.print_statuses(db.get(result['id']) for result in results)
 
 
 def main() -> int:

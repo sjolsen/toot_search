@@ -1,39 +1,11 @@
 from collections.abc import Iterator
 import dataclasses
-import datetime
 import os
 import pickle
 import sqlite3
-from typing import Any, Optional
+from typing import Optional
 
-
-@dataclasses.dataclass
-class Status:
-    raw: dict[str, Any]
-
-    @property
-    def id(self) -> str:
-        return str(self.raw['id'])
-
-    @property
-    def url(self) -> str:
-        return self.raw['url']
-    
-    @property
-    def created_at(self) -> datetime.datetime:
-        return self.raw['created_at']
-
-    @property
-    def account(self) -> str:
-        return self.raw['account']['acct']
-
-    @property
-    def content(self) -> str:
-        return self.raw['content']
-
-    @property
-    def spoiler_text(self) -> str:
-        return self.raw['spoiler_text']
+from status import Status
 
 
 @dataclasses.dataclass
