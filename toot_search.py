@@ -88,13 +88,17 @@ def open_index(path: str) -> Iterator[Index]:
 def cmd_index(ns: argparse.Namespace):
     """Connect to a mastodon instance and locally index toots."""
     verify_ssl: bool = ns.verify_ssl
+    reindex: bool = ns.reindex
     host: str = ns.host
     user: str = ns.user
 
     with contextlib.ExitStack() as stack:
         db = Database(STATUS_DB)
         db.create()
-        max_id = db.max_id()
+        if reindex:
+            max_id = None
+        else:
+            max_id = db.max_id()
 
         client = stack.enter_context(Client.open(host, verify_ssl=verify_ssl))
         for status in client.get_statuses(user, min_id=max_id):
@@ -154,6 +158,8 @@ def main() -> int:
     p_index.set_defaults(command=cmd_index)
     p_index.add_argument(
         '--verify-ssl', action=argparse.BooleanOptionalAction, default=True)
+    p_index.add_argument(
+        '--reindex', action=argparse.BooleanOptionalAction, default=False)
     p_index.add_argument('host')
     p_index.add_argument('user')
 

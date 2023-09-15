@@ -54,7 +54,7 @@ class Database:
         """Insert a status into the store."""
         with sqlite3.connect(self.path) as connection:
             c = connection.cursor()
-            c.execute('INSERT INTO status(id, pickled) VALUES(?, ?)',
+            c.execute('INSERT OR REPLACE INTO status(id, pickled) VALUES(?, ?)',
                       (status.id, pickle.dumps(status.raw)))
 
     def items(self) -> Iterator[tuple[str, Status]]:
